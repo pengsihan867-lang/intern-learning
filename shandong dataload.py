@@ -48,92 +48,45 @@ class ShandongMoreData(DataLoaderEDP):
 
     # overhaulCapacity 方法
     def overhaulCapacity(self, start_date, end_date):
-        raw_data = pd.DataFrame(self._get_data(start_date, end_date, 'overhaulCapacity'))
-        
-        # 调试：检查原始数据
-        print("=" * 60)
-        print("调试：原始API返回数据")
-        print("=" * 60)
-        print(f"数据形状: {raw_data.shape}")
-        print(f"列名: {raw_data.columns.tolist()}")
-        if len(raw_data) > 0:
-            print("\n前3行原始数据:")
-            print(raw_data.head(3))
-            if 'content' in raw_data.columns:
-                print("\ncontent 列的前3个值:")
-                for idx, val in raw_data['content'].head(3).items():
-                    print(f"  行 {idx}: 类型={type(val)}, 值={repr(val)}")
-                    if isinstance(val, (list, tuple)) and len(val) > 0:
-                        print(f"    第一个元素: {repr(val[0])}, 类型={type(val[0])}")
-        print()
-        
-        if raw_data.empty or 'time' not in raw_data.columns or 'content' not in raw_data.columns:
-            print("未获取到检修容量数据，返回空 DataFrame")
-            return pd.DataFrame()
+    print("\n================= 调用 etide 接口测试 =================")
+    print(f"请求时间区间: {start_date} → {end_date}")
 
-        raw_df = raw_data.set_index('time')[['content']]
+    # 直接请求原始数据
+    raw = self._get_data(start_date, end_date, 'overhaulCapacity')
 
-        # 调试：检查提取前的值
-        print("=" * 60)
-        print("调试：提取 content 值")
-        print("=" * 60)
-        print("提取前的前3个 content 值:")
-        for idx, val in raw_df['content'].head(3).items():
-            print(f"  {idx}: {repr(val)}")
-        print()
+    print("\n=== 原始返回数据类型 ===")
+    print(type(raw))
 
-        # content 是 list，所以取第一个
-        # 改进：处理多种可能的数据结构
-        def extract_content(x):
-            if isinstance(x, (list, tuple)) and len(x) > 0:
-                first = x[0]
-                # 如果第一个元素也是列表，再取一层
-                if isinstance(first, (list, tuple)) and len(first) > 0:
-                    return first[0]
-                # 如果第一个元素是字典，取第一个值
-                elif isinstance(first, dict) and first:
-                    return list(first.values())[0]
-                else:
-                    return first
-            elif isinstance(x, dict) and x:
-                return list(x.values())[0]
-            else:
-                return x
-        
-        raw_df['content'] = raw_df['content'].apply(extract_content)
-        
-        # 调试：检查提取后的值
-        print("提取后的前3个 content 值:")
-        for idx, val in raw_df['content'].head(3).items():
-            print(f"  {idx}: {repr(val)}, 类型={type(val)}")
-        print()
+    print("\n=== 原始返回数据长度 ===")
+    print(len(raw))
 
-        raw_df.index = pd.to_datetime(raw_df.index)
-        raw_df.columns = ['检修容量']
+    # 如果没有数据
+    if not raw:
+        print("\n❌ 未获取到任何数据！请检查日期或权限。\n")
+        return
 
-        # ⭐ 打印 daily 结果
-        print("=" * 60)
-        print("Daily 检修容量数据")
-        print("=" * 60)
-        print(raw_df)
-        print(f"非零值数量: {(raw_df['检修容量'] != 0).sum() if not raw_df.empty else 0}")
+    # 打印前 3 条完整 JSON
+    import json
+    print("\n=== 原始返回内容（前 3 条）===\n")
+    print(json.dumps(raw[:3], ensure_ascii=False, indent=2))
 
-        # ⭐ 转换成 15 分钟数据
-        df_15min = self.convert_daily_to_15min(raw_df)
+    # 打印每条的 time 和 content
+    print("\n=== 每条记录的 time + content（前 3 条）===")
+    for i, item in enumerate(raw[:3]):
+        print(f"\n--- 第 {i+1} 条 ---")
+        print(f"time: {item.get('time')}")
+        print(f"content 类型: {type(item.get('content'))}")
+        print(f"content 值: {repr(item.get('content'))}")
 
-        print("\n" + "=" * 60)
-        print("15 分钟填充后的检修容量")
-        print("=" * 60)
-        print(df_15min.head(10))
-        print(f"非零值数量: {(df_15min['检修容量'] != 0).sum() if not df_15min.empty else 0}")
+    print("\n================= etide API 测试结束 =================\n")
 
-        return df_15min
-
+    # 返回原始数据即可
+    return raw
 
 
 if __name__ == "__main__":
     loader = ShandongMoreData()
-
+    loader.overhaulCapacity("2024-01-01", "2024-01-03")
    
     df = loader.overhaulCapacity("2024-01-01", "2024-01-03")
 
@@ -171,5 +124,6 @@ if __name__ == "__main__":
 
 
     
+
 
     
