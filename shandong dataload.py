@@ -48,64 +48,279 @@ class ShandongMoreData(DataLoaderEDP):
 
         return df_15min
 
-    # overhaulCapacity 方法
+    # ======== 通用内部工具函数 ========
+    @staticmethod
+    def _expand_daily_list_to_15min(df_daily: pd.DataFrame, col_name: str) -> pd.DataFrame:
+        """content 是长度 96 的 list[float] 时，展开为 15min 序列。"""
+        if df_daily.empty:
+            return pd.DataFrame(columns=[col_name])
+
+        dfs = []
+        for day, row in df_daily.iterrows():
+            values = row.get("content")
+            if not isinstance(values, (list, tuple)) or len(values) == 0:
+                continue
+            # 以当天 00:00 起，每 15 分钟一个点
+            day_ts = pd.to_datetime(day)
+            idx = pd.date_range(start=day_ts, periods=len(values), freq="15min")
+            s = pd.Series(values, index=idx, name=col_name)
+            dfs.append(s.to_frame())
+
+        if not dfs:
+            return pd.DataFrame(columns=[col_name])
+        return pd.concat(dfs).sort_index()
+
+    @staticmethod
+    def _expand_daily_listdict_to_15min(df_daily: pd.DataFrame) -> pd.DataFrame:
+        """content 是长度 96 的 list[dict] 时，展开为 15min 序列。"""
+        if df_daily.empty:
+            return pd.DataFrame()
+
+        dfs = []
+        for day, row in df_daily.iterrows():
+            records = row.get("content")
+            if not isinstance(records, (list, tuple)) or len(records) == 0:
+                continue
+            df_c = pd.DataFrame(records)
+            day_ts = pd.to_datetime(day)
+            idx = pd.date_range(start=day_ts, periods=len(df_c), freq="15min")
+            df_c.index = idx
+            dfs.append(df_c)
+
+        if not dfs:
+            return pd.DataFrame()
+        return pd.concat(dfs).sort_index()
+
+    @staticmethod
+    def _prepare_daily_content_df(raw) -> pd.DataFrame:
+        """将原始返回整理为以 date 为索引、仅含 content 的 DataFrame。"""
+        df = raw.copy() if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw)
+        if df.empty or "time" not in df.columns or "content" not in df.columns:
+            return pd.DataFrame(columns=["content"])
+        return df.set_index("time")[["content"]]
+
+    # ====================== 各种 dataType 封装 ======================
+
+    # ---- 检修容量（日值 × 1）→ 15min 复制 ----
     def overhaulCapacity(self, start_date, end_date):
-        print("\n================= 调用 etide 接口测试 =================")
-        print(f"请求时间区间: {start_date} → {end_date}")
-
-        raw = self._get_data(start_date, end_date, 'overhaulCapacity')
-
-        print("\n=== 原始返回数据类型 ===")
-        print(type(raw))
-        if isinstance(raw, pd.DataFrame):
-            raw_df = raw.copy()
-        else:
-            raw_df = pd.DataFrame(raw)
-
-        print("\n=== 原始返回数据长度 ===")
-        print(len(raw_df))
-
-        if raw_df.empty:
-            print("\n❌ 未获取到任何数据！请检查日期或权限。\n")
-            return pd.DataFrame(columns=['检修容量'])
-        import json
-        print("\n=== 原始返回内容（前 3 条）===\n")
-        print(json.dumps(raw_df.head(3).to_dict(orient='records'), ensure_ascii=False, indent=2))
-
-        if 'time' not in raw_df.columns or 'content' not in raw_df.columns:
-            print("⚠️ 数据结构不符合预期，返回空 DataFrame")
-            return pd.DataFrame(columns=['检修容量'])
+        """检修容量预测。"""
+        raw = self._get_data(start_date, end_date, "overhaulCapacity")
+        raw_df = raw.copy() if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw)
+        if raw_df.empty or "time" not in raw_df.columns or "content" not in raw_df.columns:
+            return pd.DataFrame(columns=["检修容量"])
 
         def extract_content(value):
             if isinstance(value, (list, tuple)):
-                for item in value:
-                    if isinstance(item, (int, float, str)) or item is None:
-                        return item
-                    if isinstance(item, dict):
-                        for _, v in item.items():
-                            return v
-                    if isinstance(item, (list, tuple)) and item:
-                        return item[0]
-                return value[0] if len(value) > 0 else None
-            if isinstance(value, dict):
+                if not value:
+                    return None
+                first = value[0]
+                if isinstance(first, (list, tuple)) and first:
+                    return first[0]
+                if isinstance(first, dict) and first:
+                    # 取字典第一个值
+                    for _, v in first.items():
+                        return v
+                return first
+            if isinstance(value, dict) and value:
                 for _, v in value.items():
                     return v
             return value
 
-        df = raw_df.set_index('time')[['content']]
-        df['content'] = df['content'].apply(extract_content)
+        df = raw_df.set_index("time")[["content"]]
+        df["content"] = df["content"].apply(extract_content)
         df.index = pd.to_datetime(df.index)
-        df.columns = ['检修容量']
+        df.columns = ["检修容量"]
 
-        print("\n=== Daily 检修容量数据（前 10 行）===")
-        print(df.head(10))
+        return self.convert_daily_to_15min(df)
 
-        df_15min = self.convert_daily_to_15min(df)
-        print("\n=== 15min 填充数据（前 10 行）===")
-        print(df_15min.head(10))
+    # ---- 一类：content 为 list[float]，长度 96 ----
 
-        print("\n================= etide API 测试结束 =================\n")
-        return df_15min
+    def waterPowerWeekForecast(self, start_date, end_date):
+        """水电含抽需。"""
+        raw = self._get_data(start_date, end_date, "waterPowerWeekForecast")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["水电含抽需"])
+        return self._expand_daily_list_to_15min(df_daily, "水电含抽需")
+
+    def newEnergyWeekForecast(self, start_date, end_date):
+        """新能源。"""
+        raw = self._get_data(start_date, end_date, "newEnergyWeekForecast")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["新能源"])
+        return self._expand_daily_list_to_15min(df_daily, "新能源")
+
+    def loadRegulationWeekForecast(self, start_date, end_date):
+        """直调负荷预测。"""
+        raw = self._get_data(start_date, end_date, "loadRegulationWeekForecast")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["直调负荷"])
+        return self._expand_daily_list_to_15min(df_daily, "直调负荷")
+
+    def totalPowerWeekForecast(self, start_date, end_date):
+        """全网负荷预测。"""
+        raw = self._get_data(start_date, end_date, "totalPowerWeekForecast")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["全网负荷"])
+        return self._expand_daily_list_to_15min(df_daily, "全网负荷")
+
+    def loadRegulationReal(self, start_date, end_date):
+        """实际负荷-直调负荷。"""
+        raw = self._get_data(start_date, end_date, "loadRegulationReal")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["实际负荷-直调负荷"])
+        return self._expand_daily_list_to_15min(df_daily, "实际负荷-直调负荷")
+
+    def totalPowerReal(self, start_date, end_date):
+        """实际负荷-全网负荷。"""
+        raw = self._get_data(start_date, end_date, "totalPowerReal")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["实际负荷-全网负荷"])
+        return self._expand_daily_list_to_15min(df_daily, "实际负荷-全网负荷")
+
+    def totalPowerPreForecast(self, start_date, end_date):
+        """日前预计划-全网负荷。"""
+        raw = self._get_data(start_date, end_date, "totalPowerPreForecast")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["日前预计划-全网负荷"])
+        return self._expand_daily_list_to_15min(df_daily, "日前预计划-全网负荷")
+
+    def loadRegulationPreForecast(self, start_date, end_date):
+        """日前预计划-直调负荷。"""
+        raw = self._get_data(start_date, end_date, "loadRegulationPreForecast")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame(columns=["日前预计划-直调负荷"])
+        return self._expand_daily_list_to_15min(df_daily, "日前预计划-直调负荷")
+
+    # ---- 二类：电源出清电量及台数（list[dict]，len=96） ----
+
+    def dayAheadSourceClearElecUnits(self, start_date, end_date):
+        """日前各类电源出清电量及台数。"""
+        raw = self._get_data(start_date, end_date, "dayAheadSourceClearElecUnits")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame()
+        return self._expand_daily_listdict_to_15min(df_daily)
+
+    def realTimeSourceClearElecUnits(self, start_date, end_date):
+        """实时各类电源出清电量及台数。"""
+        raw = self._get_data(start_date, end_date, "realTimeSourceClearElecUnits")
+        df_daily = self._prepare_daily_content_df(raw)
+        if df_daily.empty:
+            return pd.DataFrame()
+        return self._expand_daily_listdict_to_15min(df_daily)
+
+    # ---- 三类：日机组最大出力（list[dict{unitType, unitDataList}]） ----
+
+    def dailyUnitMaximumPower(self, start_date, end_date):
+        """日机组最大出力，展开到机组明细。"""
+        raw = self._get_data(start_date, end_date, "dailyUnitMaximumPower")
+        df_daily = pd.DataFrame(raw)
+        if df_daily.empty:
+            return pd.DataFrame()
+
+        rows = []
+        for _, row in df_daily.iterrows():
+            day = pd.to_datetime(row.get("time"))
+            content = row.get("content") or []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                unit_type = block.get("unitType")
+                for u in block.get("unitDataList", []) or []:
+                    rec = {"date": day, "unitType": unit_type}
+                    if isinstance(u, dict):
+                        rec.update(u)
+                    rows.append(rec)
+        if not rows:
+            return pd.DataFrame()
+        result = pd.DataFrame(rows)
+        result.set_index("date", inplace=True)
+        return result.sort_index()
+
+    # ---- 四类：实时机组开停机状态（site/machine/status 嵌套） ----
+
+    def realTimeMachineRunStopStatus(self, start_date, end_date):
+        """实时各机组开停机状态，展开为 15min 明细。"""
+        raw = self._get_data(start_date, end_date, "realTimeMachineRunStopStatus")
+        df_daily = pd.DataFrame(raw)
+        if df_daily.empty:
+            return pd.DataFrame()
+
+        rows = []
+        for _, row in df_daily.iterrows():
+            date_str = row.get("time")
+            date_base = pd.to_datetime(date_str).date()
+            content = row.get("content") or []
+            for site in content:
+                if not isinstance(site, dict):
+                    continue
+                site_name = site.get("siteName")
+                for mach in site.get("machineList", []) or []:
+                    machine_name = mach.get("machineName")
+                    for s in mach.get("statusList", []) or []:
+                        t_str = s.get("time")
+                        status = s.get("status")
+                        if not t_str:
+                            continue
+                        try:
+                            t = datetime.strptime(t_str, "%H:%M").time()
+                        except Exception:
+                            continue
+                        ts = datetime.combine(date_base, t)
+                        rows.append(
+                            {
+                                "timestamp": ts,
+                                "siteName": site_name,
+                                "machineName": machine_name,
+                                "status": status,
+                            }
+                        )
+        if not rows:
+            return pd.DataFrame()
+        result = pd.DataFrame(rows)
+        result.set_index("timestamp", inplace=True)
+        return result.sort_index()
+
+    # ---- 五类：电网设备停运情况及其影响（list[dict] 事件） ----
+
+    def deviceStopSituation(self, start_date, end_date):
+        """电网设备停运情况及其影响，展开为事件明细。"""
+        raw = self._get_data(start_date, end_date, "deviceStopSituation")
+        df_daily = pd.DataFrame(raw)
+        if df_daily.empty:
+            return pd.DataFrame()
+
+        rows = []
+        for _, row in df_daily.iterrows():
+            day = row.get("time")
+            content = row.get("content") or []
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                rec = {"day": pd.to_datetime(day)}
+                rec.update(item)
+                rows.append(rec)
+        if not rows:
+            return pd.DataFrame()
+        result = pd.DataFrame(rows)
+        # 如果有 powerOutageTime 字段，优先用它做索引
+        if "powerOutageTime" in result.columns:
+            try:
+                result["powerOutageTime"] = pd.to_datetime(result["powerOutageTime"])
+                result.set_index("powerOutageTime", inplace=True)
+            except Exception:
+                result.set_index("day", inplace=True)
+        else:
+            result.set_index("day", inplace=True)
+        return result.sort_index()
 
     # 通用调试：打印任意 dataType 的返回结构（只打印，不做转换）
     def debug_datatype(
@@ -113,10 +328,11 @@ class ShandongMoreData(DataLoaderEDP):
         data_type,
         start_date=None,
         end_date=None,
-        max_rows: int = 3,
+        max_rows: int = 1,
         auto_search: bool = True,
         search_window_days: int = 7,
         max_search_days: int = 365,
+        truncate_len: int = 200,
     ):
         """
         调试辅助方法：查看某个 dataType 的原始返回结构。
@@ -165,68 +381,78 @@ class ShandongMoreData(DataLoaderEDP):
             print("⚠️ DataFrame 为空（这一段时间可能没有该 dataType 的数据）")
             return
 
-        print(f"\n前 {max_rows} 行原始数据:")
+        print(f"\n前 {max_rows} 行原始数据（简要）:")
         print(raw_df.head(max_rows))
 
         # 专门看一下 content 列的结构
         if "content" in raw_df.columns:
-            print(f"\ncontent 列前 {max_rows} 行的详细结构:")
+            print(f"\ncontent 列前 {max_rows} 行的结构:")
             for idx, val in raw_df["content"].head(max_rows).items():
-                print(f"\n行 {idx}:")
-                print(f"  类型: {type(val)}")
-                print(f"  值: {repr(val)}")
-                if isinstance(val, (list, tuple)) and val:
-                    print(f"  第一个元素: {repr(val[0])} (类型: {type(val[0])})")
+                print(f"\n行 {idx}: 类型={type(val)}")
+
+                def fmt(value):
+                    text = repr(value)
+                    return text if len(text) <= truncate_len else text[:truncate_len] + "..."
+
+                if isinstance(val, (list, tuple)):
+                    print(f"  列表/元组，长度={len(val)}")
+                    if val:
+                        print(f"  第一个元素类型={type(val[0])}")
+                        print(f"  第一个元素值={fmt(val[0])}")
+                elif isinstance(val, dict):
+                    print(f"  字典，键集合={list(val.keys())[:10]}")
+                    print(f"  字典内容={fmt(val)}")
+                else:
+                    print(f"  值={fmt(val)}")
         else:
             print("\n⚠️ 不存在 content 列")
 
 
 if __name__ == "__main__":
+    # 简单检验：随机挑选几个封装后的方法，打印 15min 粒度的结果样例
     loader = ShandongMoreData()
 
-    # 可根据需要调整时间区间
-    start_date = "2024-01-01"
-    end_date = "2024-01-07"
+    # 可按需调整时间区间（尽量选择近期有数据的时间段）
+    start_date = "2025-11-13"
+    end_date = "2025-11-19"
 
-    data_types = [
-        ("水电含抽需", "waterPowerWeekForecast"),
-        ("新能源", "newEnergyWeekForecast"),
-        ("直调负荷", "loadRegulationWeekForecast"),
-        ("全网负荷", "totalPowerWeekForecast"),
-        ("实际负荷-直调负荷", "loadRegulationReal"),
-        ("实际负荷-全网负荷", "totalPowerReal"),
-        ("日前预计划-全网负荷", "totalPowerPreForecast"),
-        ("日前预计划-直调负荷", "loadRegulationPreForecast"),
-        ("日前各类电源出清电量及台数", "dayAheadSourceClearElecUnits"),
-        ("实时各类电源出清电量及台数", "realTimeSourceClearElecUnits"),
-        ("日机组最大出力", "dailyUnitMaximumPower"),
-        ("实时各机组开停机状态", "realTimeMachineRunStopStatus"),
-        ("电网设备停运情况及其影响", "deviceStopSituation"),
-        ("煤电机组开停机台次和容量", "thermalMachineUnitsAndCapacity"),
-        ("重要通道实际输电情况", "importantChannels"),
-        ("实际运行输电断面约束情况", "transmissionSections"),
-        ("重要线路与变压器平均潮流", "importantLinesAndTransformers"),
-        ("发电机组检修计划执行情况", "generatorUnitMaintenancePlan"),
-        ("输电设备检修计划执行", "transmissionEquipmentMaintenancePlan"),
-        ("变电设备检修计划执行", "substationEquipmentMaintenancePlan"),
-        ("日前发电侧出清均价", "powerGenerationSideInRecentDays"),
-        ("日前市场各时段出清的断面约束及阻塞情况", "marketClearingAtVariousTimeIntervals"),
-        ("市场干预情况原始日志", "originalLogOfMarketIntervention"),
-        ("电网运行预测信息-阻塞信息", "powerGridOperationForecastInformation"),
-        ("检修容量预测", "overhaulCapacity"),
-        ("检修容量实际", "overhaulCapacityReal"),
+    tests = [
+        ("overhaulCapacity", loader.overhaulCapacity),
+        ("waterPowerWeekForecast", loader.waterPowerWeekForecast),
+        ("newEnergyWeekForecast", loader.newEnergyWeekForecast),
+        ("loadRegulationWeekForecast", loader.loadRegulationWeekForecast),
+        ("totalPowerWeekForecast", loader.totalPowerWeekForecast),
+        ("loadRegulationReal", loader.loadRegulationReal),
+        ("totalPowerReal", loader.totalPowerReal),
+        ("totalPowerPreForecast", loader.totalPowerPreForecast),
+        ("loadRegulationPreForecast", loader.loadRegulationPreForecast),
+        ("dayAheadSourceClearElecUnits", loader.dayAheadSourceClearElecUnits),
+        ("realTimeSourceClearElecUnits", loader.realTimeSourceClearElecUnits),
+        ("dailyUnitMaximumPower", loader.dailyUnitMaximumPower),
+        ("realTimeMachineRunStopStatus", loader.realTimeMachineRunStopStatus),
+        ("deviceStopSituation", loader.deviceStopSituation),
     ]
 
-    for zh_name, dtype in data_types:
-        print("\n" + "#" * 100)
-        print(f"{zh_name} ({dtype})")
-        print("#" * 100)
-        loader.debug_datatype(dtype, start_date, end_date)
-
-    # 如果仍然想看 overhaulCapacity 转换后的结果，可取消下方注释
-    # df = loader.overhaulCapacity(start_date, end_date)
-    # print("\n========== 方法返回值 df.head() ==========")
-    # print(df.head())
+    for name, func in tests:
+        print("\n" + "=" * 60)
+        print(f"{name} | {start_date} → {end_date}")
+        print("=" * 60)
+        try:
+            df = func(start_date, end_date)
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                # 估计时间粒度（前 8 个点）
+                freq = None
+                if isinstance(df.index, pd.DatetimeIndex) and len(df.index) >= 8:
+                    try:
+                        freq = pd.infer_freq(df.index[:8])
+                    except Exception:
+                        freq = None
+                print(f"shape={df.shape}, inferred_freq={freq}")
+                print(df.head(5))
+            else:
+                print("empty dataframe or invalid result")
+        except Exception as e:
+            print(f"error: {e}")
     
     
     
@@ -263,4 +489,5 @@ if __name__ == "__main__":
 
 
     
+
 
