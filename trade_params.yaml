@@ -1,0 +1,25 @@
+# 市场信息
+BASE_PRCIE: 394.9  # 标杆(基数)电价
+BASE_RATIO: 0.9  # 不参与市场时优先电量占上网电量的比例
+ERROR_TOLERANCE: {'wind':0.20, 'solar':0.15} # 新能源获利回收中偏差允许范围
+ASSESS_RATIO: 0.02  # 偏差电量需要被考核的比例
+ASSESS_PRICE: 394.9  # 偏差考核电价
+MAX_PRICE: 1300  #电价最大值
+MIN_PRICE: -80  #电价最小值
+SECTION_NUM: 5  # 最大报价段数
+
+# kelly配置信息
+CAPITAL_CAPACITY_RATIO: 0.1  # 控制本金中装机容量的比例，光伏无效
+CAPITAL_POWER_RATIO: 0.1  # 控制本金中原始功率预测的比例
+ODD_SPREAD_FACTOR: 2  # 计算赔率时预测价差的影响程度
+OFFSET_DAYS: 10  # 选取多少天的历史数据
+DELAY_DAYS: 2  # D-n的数据
+BE_TATIO: 0.05  # 保底比例
+
+# opt配置信息
+SOLAR_TIMES: ['05:15','19:30']  # 光伏有效出力时段
+PRICE_MEAN_LENGTH: 4  # 结算电价取几个点的平均，山东15min一个点，按小时结算，就是4
+UP_LIMIT_RATIO: 0.2  # 上调极限比例(比装机)
+DOWN_LIMIT_RATIO: 0.2  # 下调极限比例(比装机)
+FILTER_CAP: 2  # 价差非负时申报功率过滤点(MW)，不到会直接拉0，光伏无效
+SMOOTH_LEVEL: 3       # 平滑程度，0表示不平滑
