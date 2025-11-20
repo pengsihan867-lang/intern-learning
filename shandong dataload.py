@@ -322,137 +322,54 @@ class ShandongMoreData(DataLoaderEDP):
             result.set_index("day", inplace=True)
         return result.sort_index()
 
-    # 通用调试：打印任意 dataType 的返回结构（只打印，不做转换）
-    def debug_datatype(
-        self,
-        data_type,
-        start_date=None,
-        end_date=None,
-        max_rows: int = 1,
-        auto_search: bool = True,
-        search_window_days: int = 7,
-        max_search_days: int = 365,
-        truncate_len: int = 200,
-    ):
-        """
-        调试辅助方法：查看某个 dataType 的原始返回结构。
-
-        只做 print，不改变数据，便于你根据结构设计各自的处理逻辑。
-        """
-        print("\n" + "=" * 80)
-        window_days = max(1, search_window_days)
-
-        if auto_search or not (start_date and end_date):
-            end_dt = datetime.now().date() - timedelta(days=1)
-            found = False
-
-            for offset in range(0, max_search_days, window_days):
-                end_candidate = end_dt - timedelta(days=offset)
-                start_candidate = end_candidate - timedelta(days=window_days - 1)
-
-                start_str = start_candidate.strftime("%Y-%m-%d")
-                end_str = end_candidate.strftime("%Y-%m-%d")
-
-                raw = self._get_data(start_str, end_str, data_type)
-                df = raw.copy() if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw)
-
-                if not df.empty:
-                    start_date = start_str
-                    end_date = end_str
-                    found = True
-                    raw_df = df
-                    break
-            if not found:
-                print(f"调试 dataType = {data_type} | 未在最近 {max_search_days} 天内找到数据")
-                return
-        else:
-            raw = self._get_data(start_date, end_date, data_type)
-            raw_df = raw.copy() if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw)
-
-        print(f"调试 dataType = {data_type} | 时间区间: {start_date} → {end_date}")
-        print("=" * 80)
-
-        print(f"\n原始返回类型: {type(raw_df)}")
-
-        print(f"DataFrame 形状: {raw_df.shape}")
-        print(f"列名: {raw_df.columns.tolist()}")
-
-        if raw_df.empty:
-            print("⚠️ DataFrame 为空（这一段时间可能没有该 dataType 的数据）")
-            return
-
-        print(f"\n前 {max_rows} 行原始数据（简要）:")
-        print(raw_df.head(max_rows))
-
-        # 专门看一下 content 列的结构
-        if "content" in raw_df.columns:
-            print(f"\ncontent 列前 {max_rows} 行的结构:")
-            for idx, val in raw_df["content"].head(max_rows).items():
-                print(f"\n行 {idx}: 类型={type(val)}")
-
-                def fmt(value):
-                    text = repr(value)
-                    return text if len(text) <= truncate_len else text[:truncate_len] + "..."
-
-                if isinstance(val, (list, tuple)):
-                    print(f"  列表/元组，长度={len(val)}")
-                    if val:
-                        print(f"  第一个元素类型={type(val[0])}")
-                        print(f"  第一个元素值={fmt(val[0])}")
-                elif isinstance(val, dict):
-                    print(f"  字典，键集合={list(val.keys())[:10]}")
-                    print(f"  字典内容={fmt(val)}")
-                else:
-                    print(f"  值={fmt(val)}")
-        else:
-            print("\n⚠️ 不存在 content 列")
 
 
-if __name__ == "__main__":
-    # 简单检验：随机挑选几个封装后的方法，打印 15min 粒度的结果样例
-    loader = ShandongMoreData()
 
-    # 可按需调整时间区间（尽量选择近期有数据的时间段）
-    start_date = "2025-11-13"
-    end_date = "2025-11-19"
+# if __name__ == "__main__":
+#     # 简单检验：随机挑选几个封装后的方法，打印 15min 粒度的结果样例
+#     loader = ShandongMoreData()
 
-    tests = [
-        ("overhaulCapacity", loader.overhaulCapacity),
-        ("waterPowerWeekForecast", loader.waterPowerWeekForecast),
-        ("newEnergyWeekForecast", loader.newEnergyWeekForecast),
-        ("loadRegulationWeekForecast", loader.loadRegulationWeekForecast),
-        ("totalPowerWeekForecast", loader.totalPowerWeekForecast),
-        ("loadRegulationReal", loader.loadRegulationReal),
-        ("totalPowerReal", loader.totalPowerReal),
-        ("totalPowerPreForecast", loader.totalPowerPreForecast),
-        ("loadRegulationPreForecast", loader.loadRegulationPreForecast),
-        ("dayAheadSourceClearElecUnits", loader.dayAheadSourceClearElecUnits),
-        ("realTimeSourceClearElecUnits", loader.realTimeSourceClearElecUnits),
-        ("dailyUnitMaximumPower", loader.dailyUnitMaximumPower),
-        ("realTimeMachineRunStopStatus", loader.realTimeMachineRunStopStatus),
-        ("deviceStopSituation", loader.deviceStopSituation),
-    ]
+#     # 可按需调整时间区间（尽量选择近期有数据的时间段）
+#     start_date = "2020-01-01"
+#     end_date = "2025-11-20"
 
-    for name, func in tests:
-        print("\n" + "=" * 60)
-        print(f"{name} | {start_date} → {end_date}")
-        print("=" * 60)
-        try:
-            df = func(start_date, end_date)
-            if isinstance(df, pd.DataFrame) and not df.empty:
-                # 估计时间粒度（前 8 个点）
-                freq = None
-                if isinstance(df.index, pd.DatetimeIndex) and len(df.index) >= 8:
-                    try:
-                        freq = pd.infer_freq(df.index[:8])
-                    except Exception:
-                        freq = None
-                print(f"shape={df.shape}, inferred_freq={freq}")
-                print(df.head(5))
-            else:
-                print("empty dataframe or invalid result")
-        except Exception as e:
-            print(f"error: {e}")
+#     tests = [
+#         ("overhaulCapacity", loader.overhaulCapacity),
+#         ("waterPowerWeekForecast", loader.waterPowerWeekForecast),
+#         ("newEnergyWeekForecast", loader.newEnergyWeekForecast),
+#         ("loadRegulationWeekForecast", loader.loadRegulationWeekForecast),
+#         ("totalPowerWeekForecast", loader.totalPowerWeekForecast),
+#         ("loadRegulationReal", loader.loadRegulationReal),
+#         ("totalPowerReal", loader.totalPowerReal),
+#         ("totalPowerPreForecast", loader.totalPowerPreForecast),
+#         ("loadRegulationPreForecast", loader.loadRegulationPreForecast),
+#         ("dayAheadSourceClearElecUnits", loader.dayAheadSourceClearElecUnits),
+#         ("realTimeSourceClearElecUnits", loader.realTimeSourceClearElecUnits),
+#         ("dailyUnitMaximumPower", loader.dailyUnitMaximumPower),
+#         ("realTimeMachineRunStopStatus", loader.realTimeMachineRunStopStatus),
+#         ("deviceStopSituation", loader.deviceStopSituation),
+#     ]
+
+#     for name, func in tests:
+#         print("\n" + "=" * 60)
+#         print(f"{name} | {start_date} → {end_date}")
+#         print("=" * 60)
+#         try:
+#             df = func(start_date, end_date)
+#             if isinstance(df, pd.DataFrame) and not df.empty:
+#                 # 估计时间粒度（前 8 个点）
+#                 freq = None
+#                 if isinstance(df.index, pd.DatetimeIndex) and len(df.index) >= 8:
+#                     try:
+#                         freq = pd.infer_freq(df.index[:8])
+#                     except Exception:
+#                         freq = None
+#                 print(f"shape={df.shape}, inferred_freq={freq}")
+#                 print(df.head(5))
+#             else:
+#                 print("empty dataframe or invalid result")
+#         except Exception as e:
+#             print(f"error: {e}")
     
     
     
@@ -489,5 +406,6 @@ if __name__ == "__main__":
 
 
     
+
 
 
