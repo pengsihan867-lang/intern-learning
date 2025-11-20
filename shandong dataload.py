@@ -322,7 +322,77 @@ class ShandongMoreData(DataLoaderEDP):
             result.set_index("day", inplace=True)
         return result.sort_index()
 
-
+# --------------------------- 调试：打印 dataType 原始结构（已注释保留） ---------------------------
+# 需要时可去掉每行开头的 “# ” 后，在交互环境中调用：
+#   loader.debug_datatype("waterPowerWeekForecast", auto_search=True, max_rows=1)
+# ------------------------------------------------------------------------------------------------
+# def debug_datatype(self,
+#                    data_type,
+#                    start_date=None,
+#                    end_date=None,
+#                    max_rows: int = 1,
+#                    auto_search: bool = True,
+#                    search_window_days: int = 7,
+#                    max_search_days: int = 365,
+#                    truncate_len: int = 200):
+#     # 打印某个 dataType 的原始返回结构（仅打印，不返回）
+#     print("\n" + "=" * 80)
+#     window_days = max(1, search_window_days)
+# 
+#     if auto_search or not (start_date and end_date):
+#         end_dt = datetime.now().date() - timedelta(days=1)
+#         found = False
+#         for offset in range(0, max_search_days, window_days):
+#             end_candidate = end_dt - timedelta(days=offset)
+#             start_candidate = end_candidate - timedelta(days=window_days - 1)
+#             start_str = start_candidate.strftime("%Y-%m-%d")
+#             end_str = end_candidate.strftime("%Y-%m-%d")
+# 
+#             raw = self._get_data(start_str, end_str, data_type)
+#             raw_df = raw.copy() if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw)
+#             if not raw_df.empty:
+#                 start_date, end_date = start_str, end_str
+#                 found = True
+#                 break
+#         if not found:
+#             print(f"调试 dataType = {data_type} | 未在最近 {max_search_days} 天内找到数据")
+#             return
+#     else:
+#         raw = self._get_data(start_date, end_date, data_type)
+#         raw_df = raw.copy() if isinstance(raw, pd.DataFrame) else pd.DataFrame(raw)
+# 
+#     print(f"调试 dataType = {data_type} | 时间区间: {start_date} → {end_date}")
+#     print("=" * 80)
+#     print(f"\n原始返回类型: {type(raw_df)}")
+#     print(f"DataFrame 形状: {raw_df.shape}")
+#     print(f"列名: {list(raw_df.columns)}")
+# 
+#     if raw_df.empty:
+#         print("⚠️ DataFrame 为空（该时间段内无数据或列缺失）")
+#         return
+# 
+#     print(f"\n前 {max_rows} 行原始数据（简要）:")
+#     print(raw_df.head(max_rows))
+# 
+#     if "content" in raw_df.columns:
+#         print(f"\ncontent 列前 {max_rows} 行的结构:")
+#         for idx, val in raw_df["content"].head(max_rows).items():
+#             print(f"\n行 {idx}: 类型={type(val)}")
+#             def fmt(v):
+#                 s = repr(v)
+#                 return s if len(s) <= truncate_len else s[:truncate_len] + "..."
+#             if isinstance(val, (list, tuple)):
+#                print(f"  列表/元组，长度={len(val)}")
+#                if val:
+#                    print(f"  第一个元素类型={type(val[0])}")
+#                    print(f"  第一个元素值={fmt(val[0])}")
+#             elif isinstance(val, dict):
+#                print(f"  字典，键集合={list(val.keys())[:10]}")
+#                print(f"  字典内容={fmt(val)}")
+#             else:
+#                print(f"  值={fmt(val)}")
+#     else:
+#         print("\n⚠️ 不存在 content 列")
 
 
 # if __name__ == "__main__":
@@ -406,6 +476,7 @@ class ShandongMoreData(DataLoaderEDP):
 
 
     
+
 
 
 
